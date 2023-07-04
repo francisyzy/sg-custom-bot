@@ -9,6 +9,7 @@ const config = {
   LOG_GROUP_ID: process.env.LOG_GROUP_ID,
   URL: process.env.URL,
   OWNER_USERNAME: process.env.OWNER_USERNAME,
+  WATERMARK: process.env.WATERMARK || "watermark",
 };
 
 export default config;
