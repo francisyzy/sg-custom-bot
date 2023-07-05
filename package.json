@@ -5,12 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "build": "npm run generate && npm run deploy && tsc -p .",
-    "dev": "nodemon src/index.ts",
-    "generate": "prisma generate",
-    "deploy": "prisma migrate deploy",
-    "migrate": "prisma migrate dev",
-    "reset": "prisma migrate reset"
+    "build": "tsc -p .",
+    "dev": "nodemon src/index.ts"
   },
   "repository": {
     "type": "git",
