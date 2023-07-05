@@ -1,6 +1,4 @@
 import Jimp from "jimp";
-import path from "path";
-import fs from "fs";
 
 export async function mergeImages(
   imagePaths: string[],
@@ -34,56 +32,93 @@ export async function mergeImages(
 }
 
 export async function addTextWatermarkWithBackgroundToImage(
-  directoryPath: string,
+  imagePath: string,
   watermarkText: string,
-  outputPath: string,
+  timestamp: string,
 ): Promise<void> {
   try {
-    const files = await fs.promises.readdir(directoryPath);
-    for (const file of files) {
-      const imagePath = path.join(directoryPath, file);
+    timestamp = " " + timestamp + " ";
+    watermarkText = " " + watermarkText + " ";
+    const URL = " t.me/" + watermarkText.replace(" @", "");
+    const image = await Jimp.read(imagePath);
 
-      const image = await Jimp.read(imagePath);
+    // Set the text and background properties
+    const font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK); // Adjust the font and size as needed
+    const timestampTextWidth = Jimp.measureText(font, timestamp);
+    const watermarkTextWidth = Jimp.measureText(font, watermarkText);
+    const URLTextWidth = Jimp.measureText(font, URL);
+    const baseY =
+      imagePath.includes("3") || imagePath.includes("0")
+        ? image.getHeight() - 245
+        : 0;
+    const backgroundColor = "white"; // Adjust the background color as needed
+    const timestampX = 0; // Adjust the X position as needed
+    const timestampY = baseY + 35; // Adjust the Y position as needed
+    const timestampBackgroundHeight = 70; // Adjust the background height as needed
+    const URL_X = 0; // Adjust the X position as needed
+    const URL_Y = baseY + 175; // Adjust the Y position as needed
+    const URLBackgroundHeight = 75; // Adjust the background height as needed
+    const watermarkX = 0; // Adjust the X position as needed
+    const watermarkY = baseY + 105; // Adjust the Y position as needed
+    const watermarkBackgroundHeight = 70; // Adjust the background height as needed
 
-      // Set the text and background properties
-      const watermarkFont = await Jimp.loadFont(
-        Jimp.FONT_SANS_32_BLACK,
-      ); // Adjust the font and size as needed
-      const watermarkTextWidth = Jimp.measureText(
-        watermarkFont,
-        watermarkText,
-      );
-      const watermarkX = 0; // Adjust the X position as needed
-      const watermarkY = 40; // Adjust the Y position as needed
-      const watermarkBackgroundHeight = 40; // Adjust the background height as needed
-      const watermarkBackgroundColor = "white"; // Adjust the background color as needed
-
-      // Create the background rectangle
-      const watermarkBackgroundWidth = watermarkTextWidth + 10; // Adjust the padding as needed
-      for (let x = 0; x < watermarkBackgroundWidth; x++) {
-        for (let y = 0; y < watermarkBackgroundHeight; y++) {
-          image.setPixelColor(
-            Jimp.cssColorToHex(watermarkBackgroundColor),
-            watermarkX + x,
-            watermarkY + y,
-          );
-        }
+    // Create the background rectangle
+    const timestampBackgroundWidth = timestampTextWidth; // Adjust the padding as needed
+    for (let x = 0; x < timestampBackgroundWidth; x++) {
+      for (let y = 0; y < timestampBackgroundHeight; y++) {
+        image.setPixelColor(
+          Jimp.cssColorToHex(backgroundColor),
+          timestampX + x,
+          timestampY + y,
+        );
       }
-
-      // Add the text watermark to the image
-      image.print(watermarkFont, watermarkX, watermarkY, {
-        text: watermarkText,
-        alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
-        alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE,
-      });
-
-      // Save the resulting image
-      await image.writeAsync(outputPath);
-
-      console.log(
-        "Text watermark with background added successfully!",
-      );
     }
+
+    // Create the background rectangle
+    const watermarkBackgroundWidth = watermarkTextWidth; // Adjust the padding as needed
+    for (let x = 0; x < watermarkBackgroundWidth; x++) {
+      for (let y = 0; y < watermarkBackgroundHeight; y++) {
+        image.setPixelColor(
+          Jimp.cssColorToHex(backgroundColor),
+          watermarkX + x,
+          watermarkY + y,
+        );
+      }
+    }
+
+    // Create the background rectangle
+    const URLBackgroundWidth = URLTextWidth; // Adjust the padding as needed
+    for (let x = 0; x < URLBackgroundWidth; x++) {
+      for (let y = 0; y < URLBackgroundHeight; y++) {
+        image.setPixelColor(
+          Jimp.cssColorToHex(backgroundColor),
+          URL_X + x,
+          URL_Y + y,
+        );
+      }
+    }
+
+    // Add the text watermark to the image
+    image.print(font, watermarkX, watermarkY, {
+      text: watermarkText,
+      alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
+      alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE,
+    });
+    image.print(font, timestampX, timestampY, {
+      text: timestamp,
+      alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
+      alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE,
+    });
+    image.print(font, URL_X, URL_Y, {
+      text: URL,
+      alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
+      alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE,
+    });
+
+    // Save the resulting image
+    await image.writeAsync(imagePath);
+
+    console.log("Text watermark with background added successfully!");
   } catch (error) {
     console.error(
       "Error adding text watermark with background:",

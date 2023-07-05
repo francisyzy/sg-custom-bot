@@ -30,7 +30,6 @@ export async function pullImagesFromUrl(
 
       leftSpans.each((index, element) => {
         const timestamp = $(element).text().replace("SST ", "");
-        console.log(timestamp);
         const formatString = "EEE MMM dd HH:mm:ss yyyy";
 
         const dateObject = parse(timestamp, formatString, new Date());
@@ -39,13 +38,8 @@ export async function pullImagesFromUrl(
           dateObject,
           "dd/MM/yyyy HH:mm a",
         );
-        console.log(formattedDate);
         timestamps.push(formattedDate);
       });
-
-      console.log(imageUrls);
-
-      console.log(timestamps);
 
       // Download each image
       const downloadPromises = imageUrls.map((imageUrl, index) => {

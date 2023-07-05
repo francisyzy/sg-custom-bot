@@ -1,61 +1,58 @@
-import { Message } from "typegram";
-import { Telegraf } from "telegraf";
+import fs from "fs";
 
 import config from "./config";
 
-import { toEscapeHTMLMsg } from "./utils/messageHandler";
-import { printBotInfo } from "./utils/consolePrintUsername";
-
 import bot from "./lib/bot";
-import helper from "./commands/helper";
-import echo from "./commands/echo";
-import catchAll from "./commands/catch-all";
 import { clearImages, pullImagesFromUrl } from "./fetch_images";
-import { addTextWatermarkWithBackgroundToImage } from "./manipulate_images";
-
-// bot.use((ctx, next) => {
-//   if (
-//     ctx.message &&
-//     config.LOG_GROUP_ID &&
-//     ctx.message.from.username != config.OWNER_USERNAME
-//   ) {
-//     let userInfo = `name: <a href="tg://user?id=${
-//       ctx.message.from.id
-//     }">${toEscapeHTMLMsg(ctx.message.from.first_name)}</a>`;
-//     if (ctx.message.from.username) {
-//       userInfo += ` (@${ctx.message.from.username})`;
-//     }
-//     const text = `\ntext: ${
-//       (ctx.message as Message.TextMessage).text
-//     }`;
-//     const logMessage = userInfo + toEscapeHTMLMsg(text);
-//     bot.telegram.sendMessage(config.LOG_GROUP_ID, logMessage, {
-//       parse_mode: "HTML",
-//     });
-//   }
-//   return next();
-// });
-// bot.use(Telegraf.log());
-// bot.launch();
-// printBotInfo(bot);
+import {
+  addTextWatermarkWithBackgroundToImage,
+  mergeImages,
+} from "./manipulate_images";
+import path from "path";
+import { schedule } from "node-cron";
 
 const websiteUrl =
   "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras/woodlands.html"; // Replace with the target website URL
 const outputDirectory = "./images"; // Replace with the desired output directory path
+const combinedImagePath = outputDirectory + "/combined.jpg";
 
-clearImages(outputDirectory);
+// https://crontab.guru/#*/10_*_*_*_*
+schedule("*/10 * * * *", () => {
+  clearImages(outputDirectory);
 
-const timestampsPromise = pullImagesFromUrl(
-  websiteUrl,
-  outputDirectory,
-);
-
-timestampsPromise.then((timestamps) => {
-  addTextWatermarkWithBackgroundToImage(
-    outputDirectory,
-    config.WATERMARK,
+  const timestampsPromise = pullImagesFromUrl(
+    websiteUrl,
     outputDirectory,
   );
+
+  timestampsPromise.then(async (timestamps) => {
+    const files = await fs.promises.readdir(outputDirectory);
+    let imagePaths: string[] = [];
+    for (const file of files) {
+      imagePaths.push(path.join(outputDirectory, file));
+    }
+    for (let index = 0; index < imagePaths.length; index++) {
+      const imagePath = imagePaths[index];
+      let timestamp = "";
+      if (timestamps) {
+        timestamp = timestamps[index];
+      }
+      await addTextWatermarkWithBackgroundToImage(
+        imagePath,
+        config.WATERMARK,
+        timestamp,
+      );
+    }
+    await mergeImages(imagePaths, combinedImagePath);
+    fs.promises.readFile(combinedImagePath).then((image) => {
+      if (config.CHANNEL === undefined) {
+        throw new Error("CHANNEL must be provided!");
+      }
+      bot.telegram.sendPhoto(config.CHANNEL, { source: image }).then(()=>{
+        console.log("message sent!");
+      });
+    });
+  });
 });
 
 // Enable graceful stop
