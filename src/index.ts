@@ -16,6 +16,15 @@ const websiteUrl =
 const outputDirectory = "./images"; // Replace with the desired output directory path
 const combinedImagePath = outputDirectory + "/combined.jpg";
 
+// Check if the directory exists
+if (!fs.existsSync(outputDirectory)) {
+  // Create the directory
+  fs.mkdirSync(outputDirectory);
+  console.log(`Directory "${outputDirectory}" created successfully.`);
+} else {
+  console.log(`Directory "${outputDirectory}" already exists.`);
+}
+
 // https://crontab.guru/#*/10_*_*_*_*
 schedule("*/10 * * * *", () => {
   clearImages(outputDirectory);
