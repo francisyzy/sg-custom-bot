@@ -54,12 +54,16 @@ schedule("*/10 * * * *", () => {
     }
     await mergeImages(imagePaths, combinedImagePath);
     fs.promises.readFile(combinedImagePath).then((image) => {
-      if (config.CHANNEL === undefined) {
-        throw new Error("CHANNEL must be provided!");
+      if (process.env.NODE_ENV === "production") {
+        if (config.CHANNEL === undefined) {
+          throw new Error("CHANNEL must be provided!");
+        }
+        bot.telegram
+          .sendPhoto(config.CHANNEL, { source: image })
+          .then(() => {
+            console.log("message sent!");
+          });
       }
-      bot.telegram.sendPhoto(config.CHANNEL, { source: image }).then(()=>{
-        console.log("message sent!");
-      });
     });
   });
 });
