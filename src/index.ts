@@ -15,15 +15,12 @@ const websiteUrl =
   "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras/woodlands.html"; // Replace with the target website URL
 const outputDirectory = "./images"; // Replace with the desired output directory path
 const combinedImagePath = outputDirectory + "/combined.jpg";
+const gifDirectory = "./gifs"; // Replace with the desired output directory path
 
-// Check if the directory exists
-if (!fs.existsSync(outputDirectory)) {
-  // Create the directory
-  fs.mkdirSync(outputDirectory);
-  console.log(`Directory "${outputDirectory}" created successfully.`);
-} else {
-  console.log(`Directory "${outputDirectory}" already exists.`);
-}
+// Check if the outputDirectory exists
+createDirectoryIfNotExists(outputDirectory);
+// Check if the gifDirectory exists
+createDirectoryIfNotExists(gifDirectory);
 
 // https://crontab.guru/#*/10_*_*_*_*
 schedule("*/10 * * * *", () => {
