@@ -10,6 +10,7 @@ import {
 } from "./manipulate_images";
 import path from "path";
 import { schedule } from "node-cron";
+import { createDirectoryIfNotExists } from "./utils";
 
 const websiteUrl =
   "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras/woodlands.html"; // Replace with the target website URL

@@ -29,16 +29,7 @@ export async function pullImagesFromUrl(
       const leftSpans = $(".timestamp .left");
 
       leftSpans.each((index, element) => {
-        const timestamp = $(element).text().replace("SST ", "");
-        const formatString = "EEE MMM dd HH:mm:ss yyyy";
-
-        const dateObject = parse(timestamp, formatString, new Date());
-
-        const formattedDate = format(
-          dateObject,
-          "dd/MM/yyyy HH:mm a",
-        );
-        timestamps.push(formattedDate);
+        timestamps.push($(element).text());
       });
 
       // Download each image
