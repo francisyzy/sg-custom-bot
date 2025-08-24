@@ -19,7 +19,7 @@ export async function pullImagesFromUrl(
         const imageUrl = $(element).attr("src");
         if (imageUrl) {
           if (imageUrl.includes("trafficsmart")) {
-            imageUrls.push("https:" + imageUrl);
+            imageUrls.push(imageUrl);
           }
         }
       });
