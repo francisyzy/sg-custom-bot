@@ -18,7 +18,9 @@ const outputDirectory = "./images"; // Replace with the desired output directory
 const combinedImagePath = outputDirectory + "/combined.jpg";
 const gifDirectory = "./gifs"; // Replace with the desired output directory path
 
-console.log("Startup");
+if(process.env.NODE_ENV === "production"){
+  console.log("Startup Prod");
+}
 
 // Check if the outputDirectory exists
 createDirectoryIfNotExists(outputDirectory);
