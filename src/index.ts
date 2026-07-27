@@ -10,7 +10,9 @@ import {
 } from "./manipulate_images";
 import path from "path";
 import { schedule } from "node-cron";
+import { format } from "date-fns";
 import { createDirectoryIfNotExists } from "./utils";
+import { generateDailyGif } from "./generate_gif";
 
 const websiteUrl =
   "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras.html";
@@ -68,8 +70,22 @@ schedule("*/10 * * * *", () => {
       } else {
         console.log("Not production, not sending message");
       }
+
+      // Archive images for daily GIF
+      const archiveDate = format(new Date(), "yyyy-MM-dd");
+      const archiveDir = path.join("./archive", archiveDate);
+      createDirectoryIfNotExists(archiveDir);
+      for (const imagePath of imagePaths) {
+        const dest = path.join(archiveDir, path.basename(imagePath));
+        fs.copyFileSync(imagePath, dest);
+      }
     });
   });
+});
+
+// Midnight cron: generate daily GIF
+schedule("0 0 * * *", () => {
+  generateDailyGif();
 });
 
 // Enable graceful stop

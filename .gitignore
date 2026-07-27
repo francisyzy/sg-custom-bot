@@ -117,3 +117,6 @@ dist
 .pnp.*
 
 images/
+archive/
+gifs/
+.gif_pin_state.json
