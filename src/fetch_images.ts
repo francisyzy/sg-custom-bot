@@ -2,6 +2,7 @@ import axios from "axios";
 import cheerio from "cheerio";
 import fs from "fs";
 import { parse, format } from "date-fns";
+import { LtaServiceError } from "./errors";
 
 export async function pullImagesFromUrl(
   url: string,
@@ -23,6 +24,10 @@ export async function pullImagesFromUrl(
           }
         }
       });
+
+      if (imageUrls.length === 0) {
+        throw new LtaServiceError("LTA returned 0 images — service may be down");
+      }
 
       const timestamps: string[] = [];
 
@@ -60,7 +65,9 @@ export async function pullImagesFromUrl(
       console.log("All images downloaded successfully!");
     } catch (error) {
       console.error("Error pulling images:", error);
-      reject();
+      throw new LtaServiceError(
+        error instanceof Error ? error.message : "Unknown error pulling images"
+      );
     }
   });
 }
