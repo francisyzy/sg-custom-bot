@@ -13,7 +13,7 @@ import { schedule } from "node-cron";
 import { createDirectoryIfNotExists } from "./utils";
 
 const websiteUrl =
-  "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras/woodlands.html"; // Replace with the target website URL
+  "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras.html";
 const outputDirectory = "./images"; // Replace with the desired output directory path
 const combinedImagePath = outputDirectory + "/combined.jpg";
 const gifDirectory = "./gifs"; // Replace with the desired output directory path
