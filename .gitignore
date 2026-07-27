@@ -120,3 +120,4 @@ images/
 archive/
 gifs/
 .gif_pin_state.json
+.down_detector_state.json

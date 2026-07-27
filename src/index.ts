@@ -13,6 +13,7 @@ import { schedule } from "node-cron";
 import { format } from "date-fns";
 import { createDirectoryIfNotExists } from "./utils";
 import { generateDailyGif } from "./generate_gif";
+import { onLtaDown, onLtaRecovered } from "./down_detector";
 
 const websiteUrl =
   "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras.html";
@@ -38,49 +39,55 @@ schedule("*/10 * * * *", () => {
     outputDirectory,
   );
 
-  timestampsPromise.then(async (timestamps) => {
-    const files = await fs.promises.readdir(outputDirectory);
-    let imagePaths: string[] = [];
-    for (const file of files) {
-      imagePaths.push(path.join(outputDirectory, file));
-    }
-    for (let index = 0; index < imagePaths.length; index++) {
-      const imagePath = imagePaths[index];
-      let timestamp = "";
-      if (timestamps) {
-        timestamp = timestamps[index];
+  timestampsPromise
+    .then(async (timestamps) => {
+      onLtaRecovered();
+      const files = await fs.promises.readdir(outputDirectory);
+      let imagePaths: string[] = [];
+      for (const file of files) {
+        imagePaths.push(path.join(outputDirectory, file));
       }
-      await addTextWatermarkWithBackgroundToImage(
-        imagePath,
-        config.WATERMARK,
-        timestamp,
-      );
-    }
-    await mergeImages(imagePaths, combinedImagePath);
-    fs.promises.readFile(combinedImagePath).then((image) => {
-      if (process.env.NODE_ENV === "production") {
-        if (config.CHANNEL === undefined) {
-          throw new Error("CHANNEL must be provided!");
+      for (let index = 0; index < imagePaths.length; index++) {
+        const imagePath = imagePaths[index];
+        let timestamp = "";
+        if (timestamps) {
+          timestamp = timestamps[index];
         }
-        bot.telegram
-          .sendPhoto(config.CHANNEL, { source: image })
-          .then(() => {
-            console.log("message sent!");
-          });
-      } else {
-        console.log("Not production, not sending message");
+        await addTextWatermarkWithBackgroundToImage(
+          imagePath,
+          config.WATERMARK,
+          timestamp,
+        );
       }
+      await mergeImages(imagePaths, combinedImagePath);
+      fs.promises.readFile(combinedImagePath).then((image) => {
+        if (process.env.NODE_ENV === "production") {
+          if (config.CHANNEL === undefined) {
+            throw new Error("CHANNEL must be provided!");
+          }
+          bot.telegram
+            .sendPhoto(config.CHANNEL, { source: image })
+            .then(() => {
+              console.log("message sent!");
+            });
+        } else {
+          console.log("Not production, not sending message");
+        }
 
-      // Archive images for daily GIF
-      const archiveDate = format(new Date(), "yyyy-MM-dd");
-      const archiveDir = path.join("./archive", archiveDate);
-      createDirectoryIfNotExists(archiveDir);
-      for (const imagePath of imagePaths) {
-        const dest = path.join(archiveDir, path.basename(imagePath));
-        fs.copyFileSync(imagePath, dest);
-      }
+        // Archive images for daily GIF
+        const archiveDate = format(new Date(), "yyyy-MM-dd");
+        const archiveDir = path.join("./archive", archiveDate);
+        createDirectoryIfNotExists(archiveDir);
+        for (const imagePath of imagePaths) {
+          const dest = path.join(archiveDir, path.basename(imagePath));
+          fs.copyFileSync(imagePath, dest);
+        }
+      });
+    })
+    .catch((err) => {
+      console.error("Image fetch failed:", err);
+      onLtaDown();
     });
-  });
 });
 
 // Midnight cron: generate daily GIF
