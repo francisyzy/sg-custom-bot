@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import { createDirectoryIfNotExists } from "./utils";
 import { generateDailyGif } from "./generate_gif";
 import { onLtaDown, onLtaRecovered } from "./down_detector";
+import { LtaServiceError } from "./errors";
 
 const websiteUrl =
   "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras.html";
@@ -41,7 +42,13 @@ schedule("*/10 * * * *", () => {
 
   timestampsPromise
     .then(async (timestamps) => {
-      onLtaRecovered();
+      // Recovery bookkeeping is best-effort: a misconfigured owner ID must not
+      // stop us from posting the images we just fetched.
+      try {
+        onLtaRecovered();
+      } catch (err) {
+        console.error("Failed to record LTA recovery:", err);
+      }
       const files = await fs.promises.readdir(outputDirectory);
       let imagePaths: string[] = [];
       for (const file of files) {
@@ -60,39 +67,52 @@ schedule("*/10 * * * *", () => {
         );
       }
       await mergeImages(imagePaths, combinedImagePath);
-      fs.promises.readFile(combinedImagePath).then((image) => {
-        if (process.env.NODE_ENV === "production") {
-          if (config.CHANNEL === undefined) {
-            throw new Error("CHANNEL must be provided!");
-          }
-          bot.telegram
-            .sendPhoto(config.CHANNEL, { source: image })
-            .then(() => {
-              console.log("message sent!");
-            });
-        } else {
-          console.log("Not production, not sending message");
+      const image = await fs.promises.readFile(combinedImagePath);
+      if (process.env.NODE_ENV === "production") {
+        if (config.CHANNEL === undefined) {
+          throw new Error("CHANNEL must be provided!");
         }
+        await bot.telegram.sendPhoto(config.CHANNEL, { source: image });
+        console.log("message sent!");
+      } else {
+        console.log("Not production, not sending message");
+      }
 
-        // Archive images for daily GIF
-        const archiveDate = format(new Date(), "yyyy-MM-dd");
-        const archiveDir = path.join("./archive", archiveDate);
-        createDirectoryIfNotExists(archiveDir);
-        for (const imagePath of imagePaths) {
-          const dest = path.join(archiveDir, path.basename(imagePath));
-          fs.copyFileSync(imagePath, dest);
-        }
-      });
+      // Archive images for daily GIF
+      const archiveDate = format(new Date(), "yyyy-MM-dd");
+      const archiveDir = path.join("./archive", archiveDate);
+      createDirectoryIfNotExists(archiveDir);
+      for (const imagePath of imagePaths) {
+        const dest = path.join(archiveDir, path.basename(imagePath));
+        fs.copyFileSync(imagePath, dest);
+      }
     })
     .catch((err) => {
-      console.error("Image fetch failed:", err);
-      onLtaDown();
+      // Only an LtaServiceError means LTA itself is unreachable. Anything else
+      // (watermarking, merging, Telegram, archiving) is our own failure and
+      // must not trigger a false "LTA is down" alert to the owner.
+      if (err instanceof LtaServiceError) {
+        console.error("Image fetch failed:", err);
+        try {
+          onLtaDown();
+        } catch (alertErr) {
+          console.error("Failed to record LTA downtime:", alertErr);
+        }
+      } else {
+        console.error("Camera cycle failed:", err);
+      }
     });
 });
 
 // Midnight cron: generate daily GIF
 schedule("0 0 * * *", () => {
   generateDailyGif();
+});
+
+// A stray rejection anywhere would otherwise terminate the process (Node >=15),
+// silently taking the bot offline until it is manually restarted. Log and stay up.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
 });
 
 // Enable graceful stop
