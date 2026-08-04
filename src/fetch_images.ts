@@ -4,6 +4,15 @@ import fs from "fs";
 import { parse, format } from "date-fns";
 import { LtaServiceError } from "./errors";
 
+// Cameras to publish, by their 1-based position on the LTA page:
+//   1. View from Woodlands Causeway (Towards Johor)
+//   2. View from Woodlands Checkpoint (Towards BKE)
+//   5. View from Second Link at Tuas
+//   6. View from Tuas Checkpoint
+// The page also carries Woodlands Flyover (3), After Tuas West Road (4) and
+// two Sentosa Gateway cameras (7, 8), which we skip.
+const SELECTED_CAMERAS = [1, 2, 5, 6];
+
 export async function pullImagesFromUrl(
   url: string,
   outputPath: string,
@@ -15,27 +24,46 @@ export async function pullImagesFromUrl(
       const $ = cheerio.load(html);
 
       // Find all <img> tags and extract the "src" attribute
-      const imageUrls: string[] = [];
+      const allImageUrls: string[] = [];
       $("img").each((_, element) => {
         const imageUrl = $(element).attr("src");
         if (imageUrl) {
           if (imageUrl.includes("trafficsmart")) {
-            imageUrls.push(imageUrl);
+            allImageUrls.push(imageUrl);
           }
         }
       });
 
-      if (imageUrls.length === 0) {
+      if (allImageUrls.length === 0) {
         throw new LtaServiceError("LTA returned 0 images — service may be down");
       }
 
-      const timestamps: string[] = [];
+      const allTimestamps: string[] = [];
 
       const leftSpans = $(".timestamp .left");
 
       leftSpans.each((index, element) => {
-        timestamps.push($(element).text());
+        allTimestamps.push($(element).text());
       });
+
+      // Keep only the cameras we publish. Timestamps are filtered with the
+      // same indices so they stay paired with their image.
+      const missing = SELECTED_CAMERAS.filter(
+        (position) => position > allImageUrls.length,
+      );
+      if (missing.length > 0) {
+        throw new LtaServiceError(
+          `LTA returned ${allImageUrls.length} images, expected at least ` +
+            `${Math.max(...SELECTED_CAMERAS)} (missing camera positions: ${missing.join(", ")})`,
+        );
+      }
+
+      const imageUrls = SELECTED_CAMERAS.map(
+        (position) => allImageUrls[position - 1],
+      );
+      const timestamps = SELECTED_CAMERAS.map(
+        (position) => allTimestamps[position - 1],
+      );
 
       // Download each image
       const downloadPromises = imageUrls.map((imageUrl, index) => {
