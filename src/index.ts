@@ -78,14 +78,15 @@ schedule("*/10 * * * *", () => {
         console.log("Not production, not sending message");
       }
 
-      // Archive images for daily GIF
-      const archiveDate = format(new Date(), "yyyy-MM-dd");
-      const archiveDir = path.join("./archive", archiveDate);
+      // Archive the combined grid for the daily GIF. One frame per cycle,
+      // named by timestamp so generate_gif's lexical sort replays the day in
+      // chronological order. Archiving the individual camera images instead
+      // would collide, since they are always image0..3.jpg.
+      const now = new Date();
+      const archiveDir = path.join("./archive", format(now, "yyyy-MM-dd"));
       createDirectoryIfNotExists(archiveDir);
-      for (const imagePath of imagePaths) {
-        const dest = path.join(archiveDir, path.basename(imagePath));
-        fs.copyFileSync(imagePath, dest);
-      }
+      const frameName = `${format(now, "HH-mm-ss")}.jpg`;
+      fs.copyFileSync(combinedImagePath, path.join(archiveDir, frameName));
     })
     .catch((err) => {
       // Only an LtaServiceError means LTA itself is unreachable. Anything else
