@@ -4,14 +4,16 @@ import fs from "fs";
 import { parse, format } from "date-fns";
 import { LtaServiceError } from "./errors";
 
-// Cameras to publish, by their 1-based position on the LTA page:
-//   1. View from Woodlands Causeway (Towards Johor)
-//   2. View from Woodlands Checkpoint (Towards BKE)
+// Cameras to publish, by their 1-based position on the LTA page. Order here is
+// the order they appear in the 2x2 grid (top-left, top-right, bottom-left,
+// bottom-right), not the page order:
 //   5. View from Second Link at Tuas
 //   6. View from Tuas Checkpoint
+//   1. View from Woodlands Causeway (Towards Johor)
+//   2. View from Woodlands Checkpoint (Towards BKE)
 // The page also carries Woodlands Flyover (3), After Tuas West Road (4) and
 // two Sentosa Gateway cameras (7, 8), which we skip.
-const SELECTED_CAMERAS = [1, 2, 5, 6];
+const SELECTED_CAMERAS = [5, 6, 1, 2];
 
 export async function pullImagesFromUrl(
   url: string,
