@@ -39,8 +39,10 @@ async function resizeImage(imagePath: string): Promise<InstanceType<typeof Jimp>
 function buildPalette(frames: InstanceType<typeof Jimp>[]): number[] {
   const counts = new Map<number, number>();
 
+  // Collect all colors from all frames
   for (const frame of frames) {
     frame.scan(0, 0, frame.getWidth(), frame.getHeight(), function (_x, _y, idx) {
+      // Jimp bitmap.data is in RGBA format (4 bytes per pixel)
       const r = this.bitmap.data[idx + 0];
       const g = this.bitmap.data[idx + 1];
       const b = this.bitmap.data[idx + 2];
@@ -82,6 +84,7 @@ function rgbaToIndices(
 
   let pixelIdx = 0;
   frame.scan(0, 0, w, h, function (_x, _y, idx) {
+    // Jimp bitmap.data is in RGBA format (4 bytes per pixel)
     const r = this.bitmap.data[idx + 0];
     const g = this.bitmap.data[idx + 1];
     const b = this.bitmap.data[idx + 2];
@@ -97,6 +100,7 @@ function rgbaToIndices(
         bestDist = dist;
         bestIdx = i;
       }
+      indices[pixelIdx] = bestIdx;
     }
 
     indices[pixelIdx++] = bestIdx;
@@ -146,17 +150,30 @@ async function generateDailyGif(): Promise<void> {
   try {
     const yesterdayDir = getYesterdayDir();
     if (!yesterdayDir) {
-      console.log("[GIF] No archive directory found for yesterday.");
+      console.log(`[${new Date().toISOString()}] [GIF] No archive directory found for yesterday.`);
       return;
     }
 
     const files = fs.readdirSync(yesterdayDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg") || f.endsWith(".png"));
     if (files.length === 0) {
-      console.log("[GIF] No images found in archive directory.");
+      console.log(`[${new Date().toISOString()}] [GIF] No images found in archive directory.`);
       return;
     }
 
-    files.sort();
+    // Sort files by timestamp (numeric order)
+    files.sort((a, b) => {
+      const timeA = a.split('.')[0]; // Get just the time part (e.g., "00-00-29")
+      const timeB = b.split('.')[0];
+      
+      // Split the time format "HH-MM-SS" and convert to seconds for comparison
+      const [hA, mA, sA] = timeA.split('-').map(Number);
+      const [hB, mB, sB] = timeB.split('-').map(Number);
+      
+      const secondsA = hA * 3600 + mA * 60 + sA;
+      const secondsB = hB * 3600 + mB * 60 + sB;
+      
+      return secondsA - secondsB;
+    });
 
     // Resize all images
     const resizedFrames: InstanceType<typeof Jimp>[] = [];
@@ -176,12 +193,12 @@ async function generateDailyGif(): Promise<void> {
     const dateStr = format(subDays(new Date(), 1), "yyyy-MM-dd");
     const gifPath = path.join(GIF_OUTPUT_DIR, `${dateStr}.gif`);
     fs.writeFileSync(gifPath, gifBuffer);
-    console.log(`[GIF] Written to ${gifPath}`);
+    console.log(`[${new Date().toISOString()}] [GIF] Written to ${gifPath}`);
 
     // CHANNEL may be undefined — guard against it
     const channel = config.CHANNEL as string | undefined;
     if (!channel) {
-      console.error("[GIF] config.CHANNEL is not set.");
+      console.error(`[${new Date().toISOString()}] [GIF] config.CHANNEL is not set.`);
       return;
     }
 

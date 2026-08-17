@@ -47,7 +47,7 @@ schedule("*/10 * * * *", () => {
       try {
         onLtaRecovered();
       } catch (err) {
-        console.error("Failed to record LTA recovery:", err);
+        console.error(`[${new Date().toISOString()}] Failed to record LTA recovery:`, err);
       }
       const files = await fs.promises.readdir(outputDirectory);
       let imagePaths: string[] = [];
@@ -100,14 +100,14 @@ schedule("*/10 * * * *", () => {
       // (watermarking, merging, Telegram, archiving) is our own failure and
       // must not trigger a false "LTA is down" alert to the owner.
       if (err instanceof LtaServiceError) {
-        console.error("Image fetch failed:", err);
+        console.error(`[${new Date().toISOString()}] Image fetch failed:`, err);
         try {
           onLtaDown();
         } catch (alertErr) {
-          console.error("Failed to record LTA downtime:", alertErr);
+          console.error(`[${new Date().toISOString()}] Failed to record LTA downtime:`, alertErr);
         }
       } else {
-        console.error("Camera cycle failed:", err);
+        console.error(`[${new Date().toISOString()}] Camera cycle failed:`, err);
       }
     });
 });
@@ -120,7 +120,7 @@ schedule("0 0 * * *", () => {
 // A stray rejection anywhere would otherwise terminate the process (Node >=15),
 // silently taking the bot offline until it is manually restarted. Log and stay up.
 process.on("unhandledRejection", (reason) => {
-  console.error("Unhandled promise rejection:", reason);
+  console.error(`[${new Date().toISOString()}] Unhandled promise rejection:`, reason);
 });
 
 // Enable graceful stop

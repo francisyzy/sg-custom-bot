@@ -38,9 +38,9 @@ export function onLtaDown(): void {
     state.ownerPingedAt = null;
     saveState(state);
 
-    bot.telegram
-      .sendMessage(ownerId(), "⚠️ LTA traffic camera service is down")
-      .catch((err) => console.error("Failed to send down alert:", err));
+      bot.telegram
+        .sendMessage(ownerId(), "⚠️ LTA traffic camera service is down")
+        .catch((err) => console.error(`[${new Date().toISOString()}] Failed to send down alert:`, err));
   } else {
     const downLongEnough =
       state.firstFailureAt !== null &&
