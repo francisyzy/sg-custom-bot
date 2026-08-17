@@ -33,41 +33,52 @@ async function resizeImage(imagePath: string): Promise<InstanceType<typeof Jimp>
   return image;
 }
 
-function buildPalette(frames: InstanceType<typeof Jimp>[]): number[][] {
-  const colorCounts = new Map<string, number>();
+// Build a 256-color palette across all frames by frequency, with each
+// entry packed as a single 0xRRGGBB integer (omggif's expected shape —
+// it does `rgb >> 16 & 0xff` internally, not [r,g,b] arrays).
+function buildPalette(frames: InstanceType<typeof Jimp>[]): number[] {
+  const counts = new Map<number, number>();
 
   for (const frame of frames) {
     frame.scan(0, 0, frame.getWidth(), frame.getHeight(), function (_x, _y, idx) {
       const r = this.bitmap.data[idx + 0];
       const g = this.bitmap.data[idx + 1];
       const b = this.bitmap.data[idx + 2];
-      const key = `${r},${g},${b}`;
-      colorCounts.set(key, (colorCounts.get(key) ?? 0) + 1);
+      const packed = (r << 16) | (g << 8) | b;
+      counts.set(packed, (counts.get(packed) ?? 0) + 1);
     });
   }
 
-  // Sort by frequency descending, take top 256
-  const sorted = [...colorCounts.entries()].sort((a, b) => b[1] - a[1]);
+  const palette = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 256)
+    .map(([packed]) => packed);
 
-  const palette: number[][] = [];
-  for (const [key] of sorted) {
-    if (palette.length >= 256) break;
-    const [r, g, b] = key.split(",").map(Number);
-    palette.push([r, g, b]);
-  }
-
-  // Fill to 256 entries with black
-  while (palette.length < 256) {
-    palette.push([0, 0, 0]);
-  }
-
+  // Pad to 256 — omggif rejects any length that isn't a power of 2 in [2, 256].
+  while (palette.length < 256) palette.push(0);
   return palette;
 }
 
-function rgbaToIndices(frame: InstanceType<typeof Jimp>, palette: number[][]): Uint8Array {
+// Map each frame's pixels to the nearest palette entry, by squared distance
+// in RGB space. Writes palette indices into a Uint8Array for omggif.
+function rgbaToIndices(
+  frame: InstanceType<typeof Jimp>,
+  palette: number[],
+): Uint8Array {
   const w = frame.getWidth();
   const h = frame.getHeight();
   const indices = new Uint8Array(w * h);
+
+  // Decode the packed palette into parallel r/g/b arrays once — doing the
+  // bit-shifts inside the inner loop was the hot path.
+  const pr = new Uint8Array(palette.length);
+  const pg = new Uint8Array(palette.length);
+  const pb = new Uint8Array(palette.length);
+  for (let i = 0; i < palette.length; i++) {
+    pr[i] = (palette[i] >> 16) & 0xff;
+    pg[i] = (palette[i] >> 8) & 0xff;
+    pb[i] = palette[i] & 0xff;
+  }
 
   let pixelIdx = 0;
   frame.scan(0, 0, w, h, function (_x, _y, idx) {
@@ -78,16 +89,17 @@ function rgbaToIndices(frame: InstanceType<typeof Jimp>, palette: number[][]): U
     let bestIdx = 0;
     let bestDist = Infinity;
     for (let i = 0; i < palette.length; i++) {
-      const [pr, pg, pb] = palette[i];
-      const dist = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
+      const dr = r - pr[i];
+      const dg = g - pg[i];
+      const db = b - pb[i];
+      const dist = dr * dr + dg * dg + db * db;
       if (dist < bestDist) {
         bestDist = dist;
         bestIdx = i;
       }
     }
 
-    indices[pixelIdx] = bestIdx;
-    pixelIdx++;
+    indices[pixelIdx++] = bestIdx;
   });
 
   return indices;
@@ -100,6 +112,10 @@ function encodeGif(frames: InstanceType<typeof Jimp>[]): Buffer {
   const buffer = Buffer.alloc(estimatedSize);
 
   const palette = buildPalette(frames);
+
+  // Loop=0 = infinite. No global palette on the writer; we attach a local
+  // palette per frame instead so omggif writes the right Local Color Table
+  // block and frames stay self-describing.
   const writer = new GifWriter(buffer, w, h, { loop: 0 });
 
   for (const frame of frames) {
@@ -134,7 +150,7 @@ async function generateDailyGif(): Promise<void> {
       return;
     }
 
-    const files = fs.readdirSync(yesterdayDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg"));
+    const files = fs.readdirSync(yesterdayDir).filter((f) => f.endsWith(".jpg") || f.endsWith(".jpeg") || f.endsWith(".png"));
     if (files.length === 0) {
       console.log("[GIF] No images found in archive directory.");
       return;

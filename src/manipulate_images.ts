@@ -3,7 +3,7 @@ import Jimp from "jimp";
 export async function mergeImages(
   imagePaths: string[],
   outputPath: string,
-): Promise<void> {
+): Promise<InstanceType<typeof Jimp> | null> {
   try {
     const images = await Promise.all(
       imagePaths.map((path) => Jimp.read(path)),
@@ -26,8 +26,10 @@ export async function mergeImages(
     await mergedImage.writeAsync(outputPath);
 
     console.log("Images merged successfully!");
+    return mergedImage;
   } catch (error) {
     console.error("Error merging images:", error);
+    return null;
   }
 }
 

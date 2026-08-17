@@ -66,7 +66,7 @@ schedule("*/10 * * * *", () => {
           timestamp,
         );
       }
-      await mergeImages(imagePaths, combinedImagePath);
+      const mergedImage = await mergeImages(imagePaths, combinedImagePath);
       const image = await fs.promises.readFile(combinedImagePath);
       if (process.env.NODE_ENV === "production") {
         if (config.CHANNEL === undefined) {
@@ -82,11 +82,18 @@ schedule("*/10 * * * *", () => {
       // named by timestamp so generate_gif's lexical sort replays the day in
       // chronological order. Archiving the individual camera images instead
       // would collide, since they are always image0..3.jpg.
+      //
+      // Stored as PNG, not JPG: Jimp 0.22's JPG encoder writes files whose
+      // byte-stuffed entropy segments are not valid, so any subsequent
+      // Jimp.read of them returns all-black pixels and the daily GIF ends
+      // up all-black. PNG roundtrip is unaffected and costs ~200KB/day.
       const now = new Date();
       const archiveDir = path.join("./archive", format(now, "yyyy-MM-dd"));
       createDirectoryIfNotExists(archiveDir);
-      const frameName = `${format(now, "HH-mm-ss")}.jpg`;
-      fs.copyFileSync(combinedImagePath, path.join(archiveDir, frameName));
+      const frameName = `${format(now, "HH-mm-ss")}.png`;
+      if (mergedImage !== null) {
+        await mergedImage.writeAsync(path.join(archiveDir, frameName));
+      }
     })
     .catch((err) => {
       // Only an LtaServiceError means LTA itself is unreachable. Anything else
