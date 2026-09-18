@@ -6,14 +6,11 @@ import * as fs from "fs";
 import * as path from "path";
 import bot from "./lib/bot";
 import config from "./config";
+import { ARCHIVE_DIR, GIFS_DIR as GIF_OUTPUT_DIR, GIF_PIN_STATE_FILE as PIN_STATE_FILE } from "./paths";
 
 const GIF_MAX_WIDTH = 400;
-// Width the 10-minute cycle archives grid frames at. Kept above GIF_MAX_WIDTH
-// so the GIF can be enlarged later without touching the archiver.
-const ARCHIVE_FRAME_WIDTH = 800;
-const ARCHIVE_DIR = "./archive";
-const GIF_OUTPUT_DIR = "./gifs";
-const PIN_STATE_FILE = "./.gif_pin_state.json";
+const FRAME_DELAY_CS = 5; // centiseconds between frames (20 fps)
+const GIF_TRAILER = 0x3b;
 
 interface PinState {
   lastPinnedMessageId: number | null;
@@ -28,13 +25,6 @@ function getYesterdayDir(): string | null {
   return null;
 }
 
-async function resizeImage(imagePath: string): Promise<InstanceType<typeof Jimp>> {
-  const image = await Jimp.read(imagePath);
-  if (image.getWidth() > GIF_MAX_WIDTH) {
-    image.resize(GIF_MAX_WIDTH, Jimp.AUTO);
-  }
-  return image;
-}
 
 const PALETTE_SIZE = 256;
 
@@ -184,25 +174,87 @@ function rgbaToIndices(
   return indices;
 }
 
-function encodeGif(frames: InstanceType<typeof Jimp>[]): Buffer {
-  const w = frames[0].getWidth();
-  const h = frames[0].getHeight();
-  const estimatedSize = w * h * frames.length * 2 + 1024;
-  const buffer = Buffer.alloc(estimatedSize);
+// Encode one frame as a complete single-frame GIF (header, frame block,
+// trailer). Each archived frame is therefore a valid GIF on its own, and
+// the daily GIF is just these concatenated with the duplicate headers and
+// trailers stripped — see concatFrameGifs.
+function encodeFrameGif(frame: InstanceType<typeof Jimp>): Buffer {
+  const w = frame.getWidth();
+  const h = frame.getHeight();
+  const buffer = Buffer.alloc(w * h * 2 + 4096);
 
   // Loop=0 = infinite. No global palette on the writer; each frame gets its
   // own Local Color Table so a day that goes from bright noon to sodium-lit
   // night isn't forced to share 256 colours across both.
   const writer = new GifWriter(buffer, w, h, { loop: 0 });
+  const palette = buildPalette(frame);
+  writer.addFrame(0, 0, w, h, rgbaToIndices(frame, palette), { palette, delay: FRAME_DELAY_CS });
+  return buffer.slice(0, writer.end());
+}
 
-  for (const frame of frames) {
-    const palette = buildPalette(frame);
-    const indices = rgbaToIndices(frame, palette);
-    writer.addFrame(0, 0, w, h, indices, { palette, delay: 5 });
+// Byte length of the header omggif writes for this canvas (signature,
+// logical screen descriptor, NETSCAPE loop block). It depends only on w/h
+// and our fixed options, so it is identical across a day's frames.
+function gifHeaderLength(w: number, h: number): number {
+  const buffer = Buffer.alloc(64);
+  const writer = new GifWriter(buffer, w, h, { loop: 0 });
+  return writer.end() - 1; // minus the trailer byte
+}
+
+// Canvas size from the Logical Screen Descriptor (bytes 6-9, little endian).
+function gifCanvasSize(gif: Buffer): { w: number; h: number } {
+  return { w: gif.readUInt16LE(6), h: gif.readUInt16LE(8) };
+}
+
+// Splice single-frame GIFs into one animation: first file's header, every
+// file's frame block, one trailer. Frames whose canvas differs from the
+// first are skipped — a decoder takes the canvas from the header and would
+// render a mismatched frame as garbage.
+function concatFrameGifs(frameFiles: string[]): Buffer | null {
+  let header: Buffer | null = null;
+  let canvas = { w: 0, h: 0 };
+  let headerLength = 0;
+  const blocks: Buffer[] = [];
+
+  for (const file of frameFiles) {
+    const gif = fs.readFileSync(file);
+    if (gif.length < 14 || gif.toString("latin1", 0, 6) !== "GIF89a" || gif[gif.length - 1] !== GIF_TRAILER) {
+      console.warn(`[${new Date().toISOString()}] [GIF] Skipping ${file}: not a complete GIF`);
+      continue;
+    }
+    const size = gifCanvasSize(gif);
+    if (header === null) {
+      canvas = size;
+      headerLength = gifHeaderLength(size.w, size.h);
+      header = gif.slice(0, headerLength);
+    } else if (size.w !== canvas.w || size.h !== canvas.h) {
+      console.warn(`[${new Date().toISOString()}] [GIF] Skipping ${file}: ${size.w}x${size.h} != ${canvas.w}x${canvas.h}`);
+      continue;
+    }
+    blocks.push(gif.slice(headerLength, gif.length - 1));
   }
 
-  const length = writer.end();
-  return buffer.slice(0, length);
+  if (header === null) return null;
+  return Buffer.concat([header, ...blocks, Buffer.from([GIF_TRAILER])]);
+}
+
+// Called from the 10-minute cycle with the merged grid still in memory.
+// Doing the resize + quantize here (a few seconds) instead of at midnight
+// means the daily GIF is a byte-concat and posts on time even on a slow box.
+async function archiveGifFrame(image: InstanceType<typeof Jimp>, now: Date): Promise<string> {
+  const frame = image.clone();
+  if (frame.getWidth() > GIF_MAX_WIDTH) {
+    frame.resize(GIF_MAX_WIDTH, Jimp.AUTO);
+  }
+  const dir = path.join(ARCHIVE_DIR, format(now, "yyyy-MM-dd"));
+  fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, `${format(now, "HH-mm-ss")}.gif`);
+  // Write to a temp name and rename so a crash mid-write can't leave a
+  // truncated .gif for midnight to pick up.
+  const tmpPath = `${filePath}.tmp`;
+  fs.writeFileSync(tmpPath, encodeFrameGif(frame));
+  fs.renameSync(tmpPath, filePath);
+  return filePath;
 }
 
 function getPinState(): PinState {
@@ -228,34 +280,23 @@ async function generateDailyGif(): Promise<void> {
       return;
     }
 
-    // Only the per-cycle grid frames (HH-mm-ss.ext). Anything else in the
-    // directory — stray image0..3.jpg from the old archiver, partial writes —
-    // would either sort as NaN or have a different size and corrupt the GIF.
+    // Only the per-cycle frames (HH-mm-ss.gif). Anything else in the
+    // directory — stray files from older archivers, .tmp partial writes —
+    // is ignored here and removed with the directory at the end.
     const files = fs
       .readdirSync(yesterdayDir)
-      .filter((f) => /^\d{2}-\d{2}-\d{2}\.(jpe?g|png)$/.test(f))
+      .filter((f) => /^\d{2}-\d{2}-\d{2}\.gif$/.test(f))
       .sort(); // zero-padded HH-mm-ss: lexical order is chronological
     if (files.length === 0) {
-      console.log(`[${new Date().toISOString()}] [GIF] No images found in archive directory.`);
+      console.log(`[${new Date().toISOString()}] [GIF] No frames found in archive directory.`);
       return;
     }
 
-    // Resize all images, skipping any frame whose size disagrees with the
-    // first — omggif takes the canvas size from frame 0 and would otherwise
-    // read a wrong-sized index buffer as garbage.
-    const resizedFrames: InstanceType<typeof Jimp>[] = [];
-    for (const file of files) {
-      const image = await resizeImage(path.join(yesterdayDir, file));
-      const first = resizedFrames[0];
-      if (first && (image.getWidth() !== first.getWidth() || image.getHeight() !== first.getHeight())) {
-        console.warn(`[${new Date().toISOString()}] [GIF] Skipping ${file}: ${image.getWidth()}x${image.getHeight()} != ${first.getWidth()}x${first.getHeight()}`);
-        continue;
-      }
-      resizedFrames.push(image);
+    const gifBuffer = concatFrameGifs(files.map((f) => path.join(yesterdayDir, f)));
+    if (gifBuffer === null) {
+      console.log(`[${new Date().toISOString()}] [GIF] No usable frames in archive directory.`);
+      return;
     }
-
-    // Encode GIF
-    const gifBuffer = encodeGif(resizedFrames);
 
     // Ensure output dir exists
     if (!fs.existsSync(GIF_OUTPUT_DIR)) {
@@ -305,4 +346,4 @@ async function generateDailyGif(): Promise<void> {
   }
 }
 
-export { ARCHIVE_FRAME_WIDTH, generateDailyGif, resizeImage, buildPalette, rgbaToIndices, encodeGif };
+export { archiveGifFrame, generateDailyGif, buildPalette, rgbaToIndices, encodeFrameGif, concatFrameGifs };

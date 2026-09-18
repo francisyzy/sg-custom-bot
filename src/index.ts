@@ -10,18 +10,17 @@ import {
 } from "./manipulate_images";
 import path from "path";
 import { schedule } from "node-cron";
-import { format } from "date-fns";
 import { createDirectoryIfNotExists } from "./utils";
-import { ARCHIVE_FRAME_WIDTH, generateDailyGif } from "./generate_gif";
-import Jimp from "jimp";
+import { archiveGifFrame, generateDailyGif } from "./generate_gif";
 import { onLtaDown, onLtaRecovered } from "./down_detector";
 import { LtaServiceError } from "./errors";
+import { GIFS_DIR, IMAGES_DIR } from "./paths";
 
 const websiteUrl =
   "https://onemotoring.lta.gov.sg/content/onemotoring/home/driving/traffic_information/traffic-cameras.html";
-const outputDirectory = "./images"; // Replace with the desired output directory path
-const combinedImagePath = outputDirectory + "/combined.jpg";
-const gifDirectory = "./gifs"; // Replace with the desired output directory path
+const outputDirectory = IMAGES_DIR;
+const combinedImagePath = path.join(outputDirectory, "combined.jpg");
+const gifDirectory = GIFS_DIR;
 
 if(process.env.NODE_ENV === "production"){
   console.log("Startup Prod");
@@ -79,30 +78,13 @@ schedule("*/10 * * * *", () => {
         console.log("Not production, not sending message");
       }
 
-      // Archive the combined grid for the daily GIF. One frame per cycle,
-      // named by timestamp so generate_gif's lexical sort replays the day in
-      // chronological order. Archiving the individual camera images instead
-      // would collide, since they are always image0..3.jpg.
-      //
-      // Downscaled to ARCHIVE_FRAME_WIDTH before writing: the GIF only needs
-      // GIF_MAX_WIDTH, and decoding a full 3840x2160 frame in Jimp takes
-      // ~15s each, which made the midnight job block the event loop (and the
-      // 10-minute posts) for the better part of an hour.
-      //
-      // Stored as PNG, not JPG: Jimp 0.22's JPG encoder writes files whose
-      // byte-stuffed entropy segments are not valid, so any subsequent
-      // Jimp.read of them returns all-black pixels and the daily GIF ends
-      // up all-black. PNG roundtrip is unaffected.
-      const now = new Date();
-      const archiveDir = path.join("./archive", format(now, "yyyy-MM-dd"));
-      createDirectoryIfNotExists(archiveDir);
-      const frameName = `${format(now, "HH-mm-ss")}.png`;
+      // Archive this cycle's grid as one pre-encoded GIF frame. Doing the
+      // resize + quantize now, while the grid is in memory, keeps the
+      // midnight job to a byte-concat so it posts on time. Named by
+      // timestamp so the day replays in chronological order.
       if (mergedImage !== null) {
-        const frame = mergedImage.clone();
-        if (frame.getWidth() > ARCHIVE_FRAME_WIDTH) {
-          frame.resize(ARCHIVE_FRAME_WIDTH, Jimp.AUTO);
-        }
-        await frame.writeAsync(path.join(archiveDir, frameName));
+        const framePath = await archiveGifFrame(mergedImage, new Date());
+        console.log(`[${new Date().toISOString()}] Archived GIF frame ${framePath}`);
       }
     })
     .catch((err) => {
