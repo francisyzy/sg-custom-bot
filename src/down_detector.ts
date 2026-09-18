@@ -1,8 +1,8 @@
 import fs from "fs";
 import bot from "./lib/bot";
 import config from "./config";
+import { DOWN_DETECTOR_STATE_FILE as STATE_FILE } from "./paths";
 
-const STATE_FILE = "./.down_detector_state.json";
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 
 interface DownState {

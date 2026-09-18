@@ -1,6 +1,7 @@
 import * as dotenv from "dotenv";
+import { ENV_FILE } from "./paths";
 
-dotenv.config();
+dotenv.config({ path: ENV_FILE });
 
 const config = {
   API_TOKEN: process.env.API_TOKEN,
