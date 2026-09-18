@@ -12,7 +12,8 @@ import path from "path";
 import { schedule } from "node-cron";
 import { format } from "date-fns";
 import { createDirectoryIfNotExists } from "./utils";
-import { generateDailyGif } from "./generate_gif";
+import { ARCHIVE_FRAME_WIDTH, generateDailyGif } from "./generate_gif";
+import Jimp from "jimp";
 import { onLtaDown, onLtaRecovered } from "./down_detector";
 import { LtaServiceError } from "./errors";
 
@@ -83,16 +84,25 @@ schedule("*/10 * * * *", () => {
       // chronological order. Archiving the individual camera images instead
       // would collide, since they are always image0..3.jpg.
       //
+      // Downscaled to ARCHIVE_FRAME_WIDTH before writing: the GIF only needs
+      // GIF_MAX_WIDTH, and decoding a full 3840x2160 frame in Jimp takes
+      // ~15s each, which made the midnight job block the event loop (and the
+      // 10-minute posts) for the better part of an hour.
+      //
       // Stored as PNG, not JPG: Jimp 0.22's JPG encoder writes files whose
       // byte-stuffed entropy segments are not valid, so any subsequent
       // Jimp.read of them returns all-black pixels and the daily GIF ends
-      // up all-black. PNG roundtrip is unaffected and costs ~200KB/day.
+      // up all-black. PNG roundtrip is unaffected.
       const now = new Date();
       const archiveDir = path.join("./archive", format(now, "yyyy-MM-dd"));
       createDirectoryIfNotExists(archiveDir);
       const frameName = `${format(now, "HH-mm-ss")}.png`;
       if (mergedImage !== null) {
-        await mergedImage.writeAsync(path.join(archiveDir, frameName));
+        const frame = mergedImage.clone();
+        if (frame.getWidth() > ARCHIVE_FRAME_WIDTH) {
+          frame.resize(ARCHIVE_FRAME_WIDTH, Jimp.AUTO);
+        }
+        await frame.writeAsync(path.join(archiveDir, frameName));
       }
     })
     .catch((err) => {
