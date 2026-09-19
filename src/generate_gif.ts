@@ -13,7 +13,7 @@ const FRAME_DELAY_CS = 5; // centiseconds between frames (20 fps)
 const GIF_TRAILER = 0x3b;
 
 interface PinState {
-  lastPinnedMessageId: number | null;
+  pinnedMessageIds: number[];
 }
 
 function getYesterdayDir(): string | null {
@@ -265,7 +265,7 @@ function getPinState(): PinState {
   } catch {
     // ignore parse errors
   }
-  return { lastPinnedMessageId: null };
+  return { pinnedMessageIds: [] };
 }
 
 function savePinState(state: PinState): void {
@@ -318,14 +318,6 @@ async function generateDailyGif(): Promise<void> {
     // Handle pin state
     const pinState = getPinState();
 
-    if (pinState.lastPinnedMessageId !== null) {
-      try {
-        await bot.telegram.unpinChatMessage(channel, pinState.lastPinnedMessageId);
-      } catch (err) {
-        console.error("[GIF] Failed to unpin previous message:", err);
-      }
-    }
-
     // Telegraf names a bare Buffer upload "animation.mp4" by default, so
     // Telegram received GIF bytes labelled as MP4. Give it a real .gif name.
     const message = await bot.telegram.sendAnimation(channel, {
@@ -334,7 +326,7 @@ async function generateDailyGif(): Promise<void> {
     });
     await bot.telegram.pinChatMessage(channel, message.message_id);
 
-    pinState.lastPinnedMessageId = message.message_id;
+    pinState.pinnedMessageIds.push(message.message_id);
     savePinState(pinState);
 
     // Clean up archive (recursive: stray non-frame files must not leave the
