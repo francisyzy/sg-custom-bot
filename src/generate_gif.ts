@@ -1,6 +1,6 @@
 // @ts-ignore - omggif does not ship types
 import { GifWriter } from "omggif";
-import Jimp from "jimp";
+import { JimpInstance } from "jimp";
 import { format, subDays } from "date-fns";
 import * as fs from "fs";
 import * as path from "path";
@@ -36,9 +36,9 @@ const PALETTE_SIZE = 256;
 // saturated pixels (tail lights, road signs) still get palette entries. The
 // previous "256 most frequent exact colours" approach filled every slot with
 // a shade of road/sky grey and the GIF came out monochrome.
-function buildPalette(frame: InstanceType<typeof Jimp>): number[] {
+function buildPalette(frame: JimpInstance): number[] {
   const data = frame.bitmap.data;
-  const pixelCount = frame.getWidth() * frame.getHeight();
+  const pixelCount = frame.width * frame.height;
 
   // Dedupe to unique colours first — it shrinks the split work a lot on
   // photographic frames and does not change where the medians land much.
@@ -132,11 +132,11 @@ function buildPalette(frame: InstanceType<typeof Jimp>): number[] {
 // that shimmers between frames, cost 2.5x the encode time and ~15% file
 // size, and the median-cut palette already tracks the source closely.
 function rgbaToIndices(
-  frame: InstanceType<typeof Jimp>,
+  frame: JimpInstance,
   palette: number[],
 ): Uint8Array {
-  const w = frame.getWidth();
-  const h = frame.getHeight();
+  const w = frame.width;
+  const h = frame.height;
   const data = frame.bitmap.data;
   const indices = new Uint8Array(w * h);
 
@@ -178,9 +178,9 @@ function rgbaToIndices(
 // trailer). Each archived frame is therefore a valid GIF on its own, and
 // the daily GIF is just these concatenated with the duplicate headers and
 // trailers stripped — see concatFrameGifs.
-function encodeFrameGif(frame: InstanceType<typeof Jimp>): Buffer {
-  const w = frame.getWidth();
-  const h = frame.getHeight();
+function encodeFrameGif(frame: JimpInstance): Buffer {
+  const w = frame.width;
+  const h = frame.height;
   const buffer = Buffer.alloc(w * h * 2 + 4096);
 
   // Loop=0 = infinite. No global palette on the writer; each frame gets its
@@ -241,10 +241,10 @@ function concatFrameGifs(frameFiles: string[]): Buffer | null {
 // Called from the 10-minute cycle with the merged grid still in memory.
 // Doing the resize + quantize here (a few seconds) instead of at midnight
 // means the daily GIF is a byte-concat and posts on time even on a slow box.
-async function archiveGifFrame(image: InstanceType<typeof Jimp>, now: Date): Promise<string> {
+async function archiveGifFrame(image: JimpInstance, now: Date): Promise<string> {
   const frame = image.clone();
-  if (frame.getWidth() > GIF_MAX_WIDTH) {
-    frame.resize(GIF_MAX_WIDTH, Jimp.AUTO);
+  if (frame.width > GIF_MAX_WIDTH) {
+    frame.resize({ w: GIF_MAX_WIDTH }); // height follows the aspect ratio
   }
   const dir = path.join(ARCHIVE_DIR, format(now, "yyyy-MM-dd"));
   fs.mkdirSync(dir, { recursive: true });

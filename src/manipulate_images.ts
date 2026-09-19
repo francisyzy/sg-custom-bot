@@ -1,29 +1,43 @@
-import Jimp from "jimp";
+import {
+  Jimp,
+  JimpInstance,
+  HorizontalAlign,
+  VerticalAlign,
+  cssColorToHex,
+  loadFont,
+  measureText,
+} from "jimp";
+import { SANS_64_BLACK } from "jimp/fonts";
 
 export async function mergeImages(
   imagePaths: string[],
   outputPath: string,
-): Promise<InstanceType<typeof Jimp> | null> {
+): Promise<JimpInstance | null> {
   try {
     const images = await Promise.all(
       imagePaths.map((path) => Jimp.read(path)),
     );
 
-    const mergedWidth = images[0].getWidth() * 2; // Adjust the width as needed
-    const mergedHeight = images[0].getHeight() * 2; // Adjust the height as needed
+    const mergedWidth = images[0].width * 2; // Adjust the width as needed
+    const mergedHeight = images[0].height * 2; // Adjust the height as needed
 
-    const mergedImage = new Jimp(mergedWidth, mergedHeight);
+    const mergedImage = new Jimp({
+      width: mergedWidth,
+      height: mergedHeight,
+    });
 
-    mergedImage.blit(images[0], 0, 0); // Top-left image
-    mergedImage.blit(images[1], images[0].getWidth(), 0); // Top-right image
-    mergedImage.blit(images[2], 0, images[0].getHeight()); // Bottom-left image
-    mergedImage.blit(
-      images[3],
-      images[0].getWidth(),
-      images[0].getHeight(),
-    ); // Bottom-right image
+    mergedImage.blit({ src: images[0], x: 0, y: 0 }); // Top-left image
+    mergedImage.blit({ src: images[1], x: images[0].width, y: 0 }); // Top-right image
+    mergedImage.blit({ src: images[2], x: 0, y: images[0].height }); // Bottom-left image
+    mergedImage.blit({
+      src: images[3],
+      x: images[0].width,
+      y: images[0].height,
+    }); // Bottom-right image
 
-    await mergedImage.writeAsync(outputPath);
+    // jimp 1.x picks the encoder from the extension and types the path as
+    // `${string}.${ext}`, hence the cast
+    await mergedImage.write(outputPath as `${string}.${string}`);
 
     console.log("Images merged successfully!");
     return mergedImage;
@@ -45,13 +59,13 @@ export async function addTextWatermarkWithBackgroundToImage(
     const image = await Jimp.read(imagePath);
 
     // Set the text and background properties
-    const font = await Jimp.loadFont(Jimp.FONT_SANS_64_BLACK); // Adjust the font and size as needed
-    const timestampTextWidth = Jimp.measureText(font, timestamp);
-    const watermarkTextWidth = Jimp.measureText(font, watermarkText);
-    const URLTextWidth = Jimp.measureText(font, URL);
+    const font = await loadFont(SANS_64_BLACK); // Adjust the font and size as needed
+    const timestampTextWidth = measureText(font, timestamp);
+    const watermarkTextWidth = measureText(font, watermarkText);
+    const URLTextWidth = measureText(font, URL);
     const baseY =
       imagePath.includes("3") || imagePath.includes("0")
-        ? image.getHeight() - 245
+        ? image.height - 245
         : 0;
     const backgroundColor = "white"; // Adjust the background color as needed
     const timestampX = 0; // Adjust the X position as needed
@@ -69,7 +83,7 @@ export async function addTextWatermarkWithBackgroundToImage(
     for (let x = 0; x < timestampBackgroundWidth; x++) {
       for (let y = 0; y < timestampBackgroundHeight; y++) {
         image.setPixelColor(
-          Jimp.cssColorToHex(backgroundColor),
+          cssColorToHex(backgroundColor),
           timestampX + x,
           timestampY + y,
         );
@@ -81,7 +95,7 @@ export async function addTextWatermarkWithBackgroundToImage(
     for (let x = 0; x < watermarkBackgroundWidth; x++) {
       for (let y = 0; y < watermarkBackgroundHeight; y++) {
         image.setPixelColor(
-          Jimp.cssColorToHex(backgroundColor),
+          cssColorToHex(backgroundColor),
           watermarkX + x,
           watermarkY + y,
         );
@@ -93,7 +107,7 @@ export async function addTextWatermarkWithBackgroundToImage(
     for (let x = 0; x < URLBackgroundWidth; x++) {
       for (let y = 0; y < URLBackgroundHeight; y++) {
         image.setPixelColor(
-          Jimp.cssColorToHex(backgroundColor),
+          cssColorToHex(backgroundColor),
           URL_X + x,
           URL_Y + y,
         );
@@ -101,24 +115,39 @@ export async function addTextWatermarkWithBackgroundToImage(
     }
 
     // Add the text watermark to the image
-    image.print(font, watermarkX, watermarkY, {
-      text: watermarkText,
-      alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
-      alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE,
+    image.print({
+      font,
+      x: watermarkX,
+      y: watermarkY,
+      text: {
+        text: watermarkText,
+        alignmentX: HorizontalAlign.LEFT,
+        alignmentY: VerticalAlign.MIDDLE,
+      },
     });
-    image.print(font, timestampX, timestampY, {
-      text: timestamp,
-      alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
-      alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE,
+    image.print({
+      font,
+      x: timestampX,
+      y: timestampY,
+      text: {
+        text: timestamp,
+        alignmentX: HorizontalAlign.LEFT,
+        alignmentY: VerticalAlign.MIDDLE,
+      },
     });
-    image.print(font, URL_X, URL_Y, {
-      text: URL,
-      alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
-      alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE,
+    image.print({
+      font,
+      x: URL_X,
+      y: URL_Y,
+      text: {
+        text: URL,
+        alignmentX: HorizontalAlign.LEFT,
+        alignmentY: VerticalAlign.MIDDLE,
+      },
     });
 
     // Save the resulting image
-    await image.writeAsync(imagePath);
+    await image.write(imagePath as `${string}.${string}`);
 
     console.log("Text watermark with background added successfully!");
   } catch (error) {
