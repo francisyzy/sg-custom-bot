@@ -8,7 +8,7 @@ import bot from "./lib/bot";
 import config from "./config";
 import { ARCHIVE_DIR, GIFS_DIR as GIF_OUTPUT_DIR, GIF_PIN_STATE_FILE as PIN_STATE_FILE } from "./paths";
 
-const GIF_MAX_WIDTH = 400;
+const GIF_MAX_WIDTH = 800;
 const FRAME_DELAY_CS = 5; // centiseconds between frames (20 fps)
 const GIF_TRAILER = 0x3b;
 
