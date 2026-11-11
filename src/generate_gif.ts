@@ -272,7 +272,35 @@ function savePinState(state: PinState): void {
   fs.writeFileSync(PIN_STATE_FILE, JSON.stringify(state, null, 2));
 }
 
+const GIF_KEEP_DAYS = 7;
+
+// Day directories and daily GIFs are named YYYY-MM-DD, so a lexical compare
+// against a cutoff date string is a date compare. Runs every midnight
+// regardless of whether the post succeeds, so a failed day (or a run of
+// them) can't pile up on disk forever.
+function pruneOldFiles(): void {
+  const archiveCutoff = format(subDays(new Date(), 1), "yyyy-MM-dd"); // keep yesterday + today
+  const gifCutoff = format(subDays(new Date(), GIF_KEEP_DAYS), "yyyy-MM-dd");
+  const prune = (dir: string, cutoff: string) => {
+    if (!fs.existsSync(dir)) return;
+    for (const name of fs.readdirSync(dir)) {
+      const m = /^(\d{4}-\d{2}-\d{2})/.exec(name);
+      if (m && m[1] < cutoff) {
+        fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+        console.log(`[${new Date().toISOString()}] [GIF] Pruned ${path.join(dir, name)}`);
+      }
+    }
+  };
+  try {
+    prune(ARCHIVE_DIR, archiveCutoff);
+    prune(GIF_OUTPUT_DIR, gifCutoff);
+  } catch (err) {
+    console.error("[GIF] Error pruning old files:", err);
+  }
+}
+
 async function generateDailyGif(): Promise<void> {
+  pruneOldFiles();
   try {
     const yesterdayDir = getYesterdayDir();
     if (!yesterdayDir) {
